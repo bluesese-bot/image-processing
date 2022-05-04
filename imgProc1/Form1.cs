@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AForge.Imaging.Filters;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -25,27 +26,6 @@ namespace imgProc1
         }
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (pbOutput.Image == null)
-            {
-                MessageBox.Show("Tidak ada file yang disimpan");
-            }
-            else
-            {
-                SaveFileDialog saveFile = new SaveFileDialog();
-                saveFile.Title = "Simpan File Citra";
-                saveFile.Filter = "Image File (*.bmp,*.jpg,*.jpeg)|*.bmp;*.jpg;*.jpeg";
-                if (DialogResult.OK == saveFile.ShowDialog())
-                    this.pbOutput.Image.Save(saveFile.FileName);
-            }
-        }
-        private static int truncate(int x)
-        {
-            if (x > 255) x = 255;
-            else if (x < 0) x = 0;
-            return x;
-        }
-        private void fileToolStripMenuItem1_Click(object sender, EventArgs e)
-        {
             OpenFileDialog openFile = new OpenFileDialog();
             openFile.Filter = "Image File (*.bmp, *.jpg, *.jpeg)|*.bmp;*.jpg;*.jpeg";
 
@@ -57,9 +37,31 @@ namespace imgProc1
                 toolStripStatusLabel1.Text = openFile.FileName + '|' + pbInput.Image.Width + "X" + pbInput.Image.Height;
             }
         }
+        private static int truncate(int x)
+        {
+            if (x > 255) x = 255;
+            else if (x < 0) x = 0;
+            return x;
+        }
+        private void fileToolStripMenuItem1_Click(object sender, EventArgs e)
+        {
+            if (pbOutput.Image == null)
+            {
+                MessageBox.Show("Không có tệp nào được lưu");
+            }
+            else
+            {
+                SaveFileDialog saveFile = new SaveFileDialog();
+                saveFile.Title = "Simpan File Citra";
+                saveFile.Filter = "Image File (*.bmp,*.jpg,*.jpeg)|*.bmp;*.jpg;*.jpeg";
+                if (DialogResult.OK == saveFile.ShowDialog())
+                    this.pbOutput.Image.Save(saveFile.FileName);
+            }
+        }
         private void closeToolStripMenuItem_Click(object sender, EventArgs e)
         {
             this.Close();
+            Dispose();
         }
         private void greyScaleToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -70,7 +72,6 @@ namespace imgProc1
             if (pbInput.Image == null)
             {
                 MessageBox.Show("Không có hình ảnh nào được xử lý");
-
             }
             else
             {
@@ -184,25 +185,37 @@ namespace imgProc1
 
                     Bitmap b = new Bitmap((Bitmap)this.pbInput.Image);
 
-                    double nilaiBrighness = Convert.ToDouble(frmLogBr.tbLogBrightness.Text);
-                    progressBar1.Visible = true;
-                    for (int i = 0; i < b.Width; i++)
-                    {
-                        for (int j = 0; j < b.Height; j++)
+                    var nilaiBrighness = Convert.ToSingle(frmLogBr.tbLogBrightness.Text);
+                    // Make the ColorMatrix.
+                    ColorMatrix cm = new ColorMatrix(new float[][]
                         {
-                            Color c1 = b.GetPixel(i, j);
-                            double r1 = nilaiBrighness * Math.Log10(c1.R + 1);
-                            double g1 = nilaiBrighness * Math.Log10(c1.G + 1);
-                            double b1 = nilaiBrighness * Math.Log10(c1.B + 1);
+                    new float[] { nilaiBrighness, 0, 0, 0, 0},
+                    new float[] {0, nilaiBrighness, 0, 0, 0},
+                    new float[] {0, 0, nilaiBrighness, 0, 0},
+                    new float[] {0, 0, 0, 1, 0},
+                    new float[] {0, 0, 0, 0, 1},
+                        });
+                    ImageAttributes attributes = new ImageAttributes();
+                    attributes.SetColorMatrix(cm);
 
-                            b.SetPixel(i, j, Color.FromArgb(Convert.ToInt16(r1), Convert.ToInt16(g1), Convert.ToInt16(b1)));
-                        }
-                        progressBar1.Value = Convert.ToInt16(100 * (i + 1) / b.Width);
+                    // Draw the image onto the new bitmap while applying the new ColorMatrix.
+                    Point[] points =
+                    {
+                        new Point(0, 0),
+                        new Point(b.Width, 0),
+                        new Point(0, b.Height),
+                    };
+                    Rectangle rect = new Rectangle(0, 0, b.Width, b.Height);
+
+                    // Make the result bitmap.
+                    Bitmap bm = new Bitmap(b.Width, b.Height);
+                    using (Graphics gr = Graphics.FromImage(bm))
+                    {
+                        gr.DrawImage(b, points, rect, GraphicsUnit.Pixel, attributes);
                     }
 
-                    progressBar1.Visible = false;
-                    this.pbOutput.Image = b;
-
+                    // Return the result
+                    this.pbOutput.Image = bm;
 
                 }
             }
@@ -218,29 +231,49 @@ namespace imgProc1
                 LogContrast frmLogCo = new LogContrast();
                 if (frmLogCo.ShowDialog() == DialogResult.Cancel)
                 {
-
-                    Bitmap b = new Bitmap((Bitmap)this.pbInput.Image);
-
-                    double nilaiContrast = Convert.ToDouble(frmLogCo.tbLogContrast.Text);
+                    double contrast = Convert.ToDouble(frmLogCo.tbLogContrast.Text);
+                    Bitmap bmap = new Bitmap((Bitmap)this.pbInput.Image);
+                    if (contrast < -100) contrast = -100;
+                    if (contrast > 100) contrast = 100;
+                    contrast = (100.0 + contrast) / 100.0;
+                    contrast *= contrast;
+                    Color col;
                     progressBar1.Visible = true;
-                    for (int i = 0; i < b.Width; i++)
+                    for (int i = 0; i < bmap.Width; i++)
                     {
-                        for (int j = 0; j < b.Height; j++)
+                        for (int j = 0; j < bmap.Height; j++)
                         {
-                            Color c1 = b.GetPixel(i, j);
-                            double r1 = nilaiContrast * Math.Log10(c1.R + 1);
-                            double g1 = nilaiContrast * Math.Log10(c1.G + 1);
-                            double b1 = nilaiContrast * Math.Log10(c1.B + 1);
+                            col = bmap.GetPixel(i, j);
+                            double pRed = col.R / 255.0;
+                            pRed -= 0.5;
+                            pRed *= contrast;
+                            pRed += 0.5;
+                            pRed *= 255;
+                            if (pRed < 0) pRed = 0;
+                            if (pRed > 255) pRed = 255;
 
-                            b.SetPixel(i, j, Color.FromArgb(Convert.ToInt16(r1), Convert.ToInt16(g1), Convert.ToInt16(b1)));
+                            double pGreen = col.G / 255.0;
+                            pGreen -= 0.5;
+                            pGreen *= contrast;
+                            pGreen += 0.5;
+                            pGreen *= 255;
+                            if (pGreen < 0) pGreen = 0;
+                            if (pGreen > 255) pGreen = 255;
+
+                            double pBlue = col.B / 255.0;
+                            pBlue -= 0.5;
+                            pBlue *= contrast;
+                            pBlue += 0.5;
+                            pBlue *= 255;
+                            if (pBlue < 0) pBlue = 0;
+                            if (pBlue > 255) pBlue = 255;
+
+                            bmap.SetPixel(i, j,
+                    Color.FromArgb((byte)pRed, (byte)pGreen, (byte)pBlue));
                         }
-                        progressBar1.Value = Convert.ToInt16(100 * (i + 1) / b.Width);
+                        progressBar1.Value = Convert.ToInt16(100 * (i + 1) / bmap.Width);
                     }
-
-                    progressBar1.Visible = false;
-                    this.pbOutput.Image = b;
-
-
+                    this.pbOutput.Image = bmap;
                 }
             }
         }
@@ -345,6 +378,44 @@ namespace imgProc1
         {
             BitDepth(4);
         }
+
+        private void blackAndWhiteToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (pbInput.Image == null)
+            {
+                MessageBox.Show("Không có hình ảnh nào được xử lý");
+            }
+            else
+            {
+                Bitmap bmap = (Bitmap)this.pbInput.Image;
+                Color c;
+                progressBar1.Visible = true;
+                for (int i = 0; i < bmap.Width; i++)
+                {
+                    for (int j = 0; j < bmap.Height; j++)
+                    {
+                        c = bmap.GetPixel(i, j);
+                        byte gray = (byte)(.299 * c.R + .587 * c.G + .114 * c.B);
+
+                        bmap.SetPixel(i, j, Color.FromArgb(gray, gray, gray));
+                    }
+                    progressBar1.Value = Convert.ToInt16(100 * (i + 1) / bmap.Width);
+                }
+                progressBar1.Visible = false;
+                this.pbOutput.Image = bmap;
+            }
+        }
+
+        private void histogramEqualizationToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Bitmap bmap = (Bitmap)this.pbInput.Image.Clone();
+            // create filter
+            HistogramEqualization filter = new HistogramEqualization();
+            // process image
+            filter.ApplyInPlace(bmap);
+            pbOutput.Image = bmap;
+        }
+
         private void bitToolStripMenuItem3_Click(object sender, EventArgs e)
         {
             BitDepth(5);
@@ -432,8 +503,8 @@ namespace imgProc1
                 double[] HistoG = new double[256];
                 double[] HistoB = new double[256];
                 Bitmap b = new Bitmap((Bitmap)pictureIMG.Image);
-                HistogramRGB histogramRGB = new HistogramRGB(Status) { Width = 650,Height = 700};
-
+                HistogramRGB histogramRGB = new HistogramRGB(Status) { Width = 650, Height = 700 };
+                progressBar1.Visible = true;
                 for (int i = 0; i < 255; i++)
                 {
                     HistoR[i] = 0;
@@ -585,9 +656,9 @@ namespace imgProc1
                 double[] iHistoG = new double[256];
                 double[] iHistoB = new double[256];
                 Bitmap b = new Bitmap((Bitmap)pictureIMGinput.Image);
-                Bitmap ib = new Bitmap((Bitmap)pictureIMGinput.Image);
-                HistogramRGB histogramRGB = new HistogramRGB(Status) { Height = 700, Width = 1280};
-
+                Bitmap ib = new Bitmap((Bitmap)pictureIMGout.Image);
+                HistogramRGB histogramRGB = new HistogramRGB(Status) { Height = 700, Width = 1280 };
+                progressBar1.Visible = true;
                 for (int i = 0; i < 255; i++)
                 {
                     HistoR[i] = 0;
@@ -620,13 +691,13 @@ namespace imgProc1
                 {
                     for (int j = 0; j <= 255; j++)
                     {
-                        Color c1 = b.GetPixel(i, j);
-                        int merah = c1.R;
-                        int hijau = c1.G;
-                        int biru = c1.B;
-                        iHistoR[merah]++;
-                        iHistoG[hijau]++;
-                        iHistoB[biru]++;
+                        Color ic1 = ib.GetPixel(i, j);
+                        int imerah = ic1.R;
+                        int ihijau = ic1.G;
+                        int ibiru = ic1.B;
+                        iHistoR[imerah]++;
+                        iHistoG[ihijau]++;
+                        iHistoB[ibiru]++;
                     }
                     progressBar1.Value = Convert.ToInt16(100 * (i + 1) / ib.Width);
                 }
@@ -672,7 +743,7 @@ namespace imgProc1
                 histogramRGB.chart4.ChartAreas["ChartArea1"].AxisX.LabelStyle.Enabled = false;
                 histogramRGB.chart4.ChartAreas["ChartArea1"].AxisY.LabelStyle.Enabled = false;
 
-                foreach (Double HstR in HistoR)
+                foreach (Double iHstR in iHistoR)
                 {
                     for (int i = 0; i <= 255; i++)
                     {
@@ -691,6 +762,7 @@ namespace imgProc1
             pointer = ImageData.Scan0;
             pointer2 = ImageData2.Scan0;
             Marshal.Copy(pointer, buffer, 0, buffer.Length);
+            progressBar1.Visible = true;
             for (int y = 0; y < Image.Height; y++)
             {
                 for (int x = 0; x < Image.Width * 3; x += 3)
@@ -746,7 +818,9 @@ namespace imgProc1
                     //buffer2[location + 1] = (byte)g;
                     //buffer2[location + 2] = (byte)r;
                 }
+                progressBar1.Value = Convert.ToInt16(100 * (y + 1) / Image.Height);
             }
+            progressBar1.Visible = false;
             Marshal.Copy(buffer2, 0, pointer2, buffer.Length);
             Image.UnlockBits(ImageData);
             Image2.UnlockBits(ImageData2);
